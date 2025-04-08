@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>প্রিমিয়াম ভিডিও প্লেয়ার</title>
+    <!-- মেটেরিয়াল আইকন -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- HLS.js -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        :root {
+            --primary-color: #ff5722;
+            --control-bg: rgba(0, 0, 0, 0.7);
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+        }
+        .player-container {
+            width: 100%;
+            max-width: 800px;
+            position: relative;
+            overflow: hidden;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        #media-element {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+        .controls {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: var(--control-bg);
+            display: flex;
+            flex-direction: column;
+            transform: translateY(100%);
+            transition: transform 0.3s;
+        }
+        .player-container:hover .controls,
+        .player-container:focus-within .controls {
+            transform: translateY(0);
+        }
+        .progress-container {
+            width: 100%;
+            height: 5px;
+            background: #555;
+            cursor: pointer;
+        }
+        .progress-bar {
+            height: 100%;
+            background: var(--primary-color);
+            width: 0%;
+        }
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 15px;
+        }
+        .left-controls, .right-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .control-button {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s;
+        }
+        .control-button:hover {
+            color: var(--primary-color);
+        }
+        .time-display {
+            font-size: 14px;
+            font-family: monospace;
+        }
+        .screen-mode-menu {
+            position: absolute;
+            bottom: 50px;
+            right: 10px;
+            background: var(--control-bg);
+            border-radius: 4px;
+            overflow: hidden;
+            display: none;
+        }
+        .screen-mode-menu button {
+            width: 100%;
+            padding: 10px 15px;
+            text-align: left;
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .screen-mode-menu button:hover {
+            background: rgba(255,255,255,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container" id="player-container">
+        <video id="media-element" playsinline></video>
+        
+        <div class="controls">
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+            <div class="button-container">
+                <div class="left-controls">
+                    <button class="control-button" id="play-pause-btn">
+                        <i class="material-icons">play_arrow</i>
+                    </button>
+                    <button class="control-button" id="volume-btn">
+                        <i class="material-icons">volume_up</i>
+                    </button>
+                    <span class="time-display" id="time-display">00:00 / 00:00</span>
+                </div>
+                <div class="right-controls">
+                    <button class="control-button" id="screen-mode-btn">
+                        <i class="material-icons">fullscreen</i>
+                    </button>
+                    <button class="control-button" id="pip-btn">
+                        <i class="material-icons">picture_in_picture</i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="screen-mode-menu" id="screen-mode-menu">
+            <button id="normal-screen">
+                <i class="material-icons">crop_5_4</i> নরমাল
+            </button>
+            <button id="fullscreen">
+                <i class="material-icons">fullscreen</i> ফুলস্ক্রিন
+            </button>
+            <button id="theater-mode">
+                <i class="material-icons">theaters</i> থিয়েটার মোড
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // এলিমেন্ট সিলেক্ট
+        const mediaElement = document.getElementById('media-element');
+        const playerContainer = document.getElementById('player-container');
+        const playPauseBtn = document.getElementById('play-pause-btn');
+        const volumeBtn = document.getElementById('volume-btn');
+        const progressContainer = document.getElementById('progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const timeDisplay = document.getElementById('time-display');
+        const screenModeBtn = document.getElementById('screen-mode-btn');
+        const pipBtn = document.getElementById('pip-btn');
+        const screenModeMenu = document.getElementById('screen-mode-menu');
+        const normalScreenBtn = document.getElementById('normal-screen');
+        const fullscreenBtn = document.getElementById('fullscreen');
+        const theaterModeBtn = document.getElementById('theater-mode');
+
+        // ভিডিও লোড
+        const urlParams = new URLSearchParams(window.location.search);
+        const mediaUrl = urlParams.get('url');
+        
+        if (!mediaUrl) {
+            showError("ভিডিও লিংক প্রদান করুন!");
+        } else {
+            initializePlayer(mediaUrl);
+        }
+
+        // প্লেয়ার ইনিশিয়ালাইজেশন
+        function initializePlayer(url) {
+            // HLS সাপোর্ট
+            if (url.includes('.m3u8')) {
+                if (Hls.isSupported()) {
+                    const hls = new Hls();
+                    hls.loadSource(url);
+                    hls.attachMedia(mediaElement);
+                    hls.on(Hls.Events.ERROR, (event, data) => {
+                        if (data.fatal) {
+                            showError("HLS ভিডিও লোড করতে ব্যর্থ!");
+                        }
+                    });
+                } else if (mediaElement.canPlayType('application/vnd.apple.mpegurl')) {
+                    mediaElement.src = url; // Safari ফ্যালব্যাক
+                } else {
+                    showError("আপনার ব্রাউজার HLS সাপোর্ট করে না!");
+                }
+            } else {
+                mediaElement.src = url;
+            }
+
+            // মিডিয়া এরর হ্যান্ডলিং
+            mediaElement.addEventListener('error', () => {
+                showError("মিডিয়া লোড করতে ব্যর্থ! লিংক চেক করুন");
+            });
+
+            // অটোপ্লে
+            mediaElement.addEventListener('loadedmetadata', () => {
+                mediaElement.play().catch(e => {
+                    console.log("অটোপ্লে ব্লক করা হয়েছে:", e);
+                });
+            });
+        }
+
+        // প্লে/পজ কন্ট্রোল
+        playPauseBtn.addEventListener('click', () => {
+            if (mediaElement.paused) {
+                mediaElement.play();
+                playPauseBtn.innerHTML = '<i class="material-icons">pause</i>';
+            } else {
+                mediaElement.pause();
+                playPauseBtn.innerHTML = '<i class="material-icons">play_arrow</i>';
+            }
+        });
+
+        // ভলিউম কন্ট্রোল
+        let isMuted = false;
+        volumeBtn.addEventListener('click', () => {
+            isMuted = !isMuted;
+            mediaElement.volume = isMuted ? 0 : 1;
+            volumeBtn.innerHTML = isMuted 
+                ? '<i class="material-icons">volume_off</i>' 
+                : '<i class="material-icons">volume_up</i>';
+        });
+
+        // প্রোগ্রেস বার আপডেট
+        mediaElement.addEventListener('timeupdate', () => {
+            const percent = (mediaElement.currentTime / mediaElement.duration) * 100;
+            progressBar.style.width = `${percent}%`;
+            updateTimeDisplay();
+        });
+
+        // প্রোগ্রেস বার ক্লিক
+        progressContainer.addEventListener('click', (e) => {
+            const pos = (e.offsetX / progressContainer.offsetWidth) * mediaElement.duration;
+            mediaElement.currentTime = pos;
+        });
+
+        // স্ক্রিন মোড মেনু টগল
+        screenModeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            screenModeMenu.style.display = screenModeMenu.style.display === 'block' ? 'none' : 'block';
+        });
+
+        // নরমাল মোড
+        normalScreenBtn.addEventListener('click', () => {
+            playerContainer.style.maxWidth = '800px';
+            playerContainer.style.borderRadius = '8px';
+            screenModeMenu.style.display = 'none';
+        });
+
+        // থিয়েটার মোড
+        theaterModeBtn.addEventListener('click', () => {
+            playerContainer.style.maxWidth = '100%';
+            playerContainer.style.borderRadius = '0';
+            screenModeMenu.style.display = 'none';
+        });
+
+        // ফুলস্ক্রিন মোড
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                playerContainer.requestFullscreen().catch(e => {
+                    console.log("ফুলস্ক্রিন ব্যর্থ:", e);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+            screenModeMenu.style.display = 'none';
+        });
+
+        // PIP মোড
+        pipBtn.addEventListener('click', () => {
+            if (document.pictureInPictureElement) {
+                document.exitPictureInPicture();
+            } else if (document.pictureInPictureEnabled) {
+                mediaElement.requestPictureInPicture();
+            } else {
+                showError("PIP সাপোর্ট করে না আপনার ব্রাউজার");
+            }
+        });
+
+        // টাইম ডিসপ্লে আপডেট
+        function updateTimeDisplay() {
+            const currentTime = formatTime(mediaElement.currentTime);
+            const duration = formatTime(mediaElement.duration);
+            timeDisplay.textContent = `${currentTime} / ${duration}`;
+        }
+
+        // টাইম ফরম্যাটিং
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // এরর ডিসপ্লে
+        function showError(message) {
+            alert(message);
+            console.error(message);
+        }
+
+        // মেনু বাইরে ক্লিক করলে বন্ধ হবে
+        document.addEventListener('click', (e) => {
+            if (!screenModeMenu.contains(e.target) {
+                screenModeMenu.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
